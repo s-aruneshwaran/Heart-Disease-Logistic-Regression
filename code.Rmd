@@ -1,0 +1,471 @@
+---
+title: "Heart Disease Prediction - A Logistic Regression Approach"
+author: "Aruneshwaran Sivakumar"
+date: "Fall 2024"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+# (Part I): Model Fitting and Interpretation
+
+```{r}
+# Loading the dataset
+heart_data <- read.csv("F:/IIT NOTES/1 FALL 2024/Regression/Project/Heart.csv", stringsAsFactors = TRUE)
+head(heart_data)
+```
+
+# Cleaning the dataset
+
+```{r}
+# Remove the Unnamed column
+data <- heart_data[, -1]
+
+# Impute missing values in Ca with the mean
+data$Ca[is.na(data$Ca)] <- mean(data$Ca, na.rm = TRUE)
+```
+
+
+```{r}
+# Define a function to find the mode
+get_mode <- function(v) {
+  unique_v <- unique(v)
+  unique_v[which.max(tabulate(match(v, unique_v)))]
+}
+
+# Impute missing values in Thal with the mode
+data$Thal[is.na(data$Thal)] <- get_mode(data$Thal)
+```
+
+
+```{r}
+# Check for remaining NA values
+colSums(is.na(data))
+
+# Convert the Yes / No values to 1 and 0
+data <- ifelse(data == "Yes", 1, 0)
+```
+
+# Fitting the logistic regression model
+
+```{r}
+# Fit logistic regression model
+model <- glm(AHD ~ Age + Sex + ChestPain + RestBP + Chol + MaxHR, data = heart_data, family = binomial)
+```
+
+
+```{r}
+
+library(pscl)
+
+# Calculate pseudo-R^2 values for the model
+pseudo_r2 <- pR2(model)  # For the initial model 
+print(pseudo_r2)
+```
+
+
+```{r}
+# Summarize the model
+summary(model)
+```
+
+# (Part II): Model Assumptions and Issues
+
+```{r}
+# Check for autocorrelation (Durbin-Watson test)
+library(lmtest)
+dwtest(model)
+```
+
+
+```{r}
+# Diagnostic plots for heteroscedasticity
+par(mfrow = c(2, 2))
+plot(model)
+```
+
+# Residuals vs Fitted: This plot evaluates the relationship between residuals and fitted values. A random scatter suggests a good model fit, but patterns or trends might indicate issues like non-linearity or heteroscedasticity.
+
+# Q-Q Plot: This assesses the normality of residuals. Points aligning closely with the diagonal line indicate that residuals follow a normal distribution. slight deviations at the tail suggest non-normality.
+
+# Scale-Location (Spread-Location): The pattern suggests increasing variance with fitted values. This highlights more prominent heteroscedasticity.
+
+# Residuals vs Leverage: This identifies influential observations. Points outside Cook's distance lines are potentially influential and may disproportionately impact the model.
+
+
+
+```{r}
+# Calculate VIF for multicollinearity
+library(car)
+vif_initial <- vif(model)
+print(vif_initial)
+```
+
+
+```{r}
+# Identify influential points based on Cook's Distance
+cook_values <- cooks.distance(model)
+influential_points <- as.numeric(names(cook_values)[(cook_values > (4 / nrow(heart_data)))])
+```
+
+#  (Part III): Addressing Model Issue
+
+```{r}
+# Remove the influential points and refit the model
+heart_data_no_influential <- heart_data[-influential_points, ]
+
+# Fit the logistic regression model again without influential points
+model_no_influential <- glm(AHD ~ Age + Sex + ChestPain + RestBP + Chol + MaxHR, 
+                            data = heart_data_no_influential, family = binomial)
+```
+
+
+```{r}
+# Calculate pseudo-R^2 values for the refitted model
+pseudo_r2_refit <- pR2(model_no_influential)  # For the refitted model
+print(pseudo_r2_refit)
+```
+
+
+```{r}
+vif_refit <- vif(model_no_influential)  # VIF after refitting
+print(vif_refit)
+```
+
+
+```{r}
+# Summary of the refitted model
+summary(model_no_influential)
+```
+
+
+```{r}
+# Check for autocorrelation (Durbin-Watson test) after refitting
+dwtest(model_no_influential)
+```
+
+
+```{r}
+# Diagnostic plots for heteroscedasticity after refitting the model
+par(mfrow = c(2, 2))
+plot(model_no_influential)
+```
+
+# Residuals vs Fitted: This plot evaluates the relationship between residuals and fitted values. The issues like non-linearity or heteroscedasticity has been reduced when compared to the initial model
+
+# Q-Q Plot: The residuals deviate from the diagonal line at the tails has been reduced when compared to the initial model, indicating that more number of residuals now follow a normal distribution.
+
+# Scale-Location (Spread-Location): The spread of residuals has a slight trend but remains relatively consistent compared to the first plot.
+
+# Residuals vs Leverage: Fewer influential points are identified when compared to the initial model.
+
+
+```{r}
+# ------------------------------- Plotting Steps Below -------------------------------
+
+# Convert AHD to numeric (0 and 1)
+heart_data$AHD_numeric <- as.numeric(heart_data$AHD) - 1  # 0 for No, 1 for Yes
+heart_data_no_influential$AHD_numeric <- as.numeric(heart_data_no_influential$AHD) - 1
+
+# Generate predicted probabilities for the initial model
+pred_probs <- predict(model, type = "response")
+residuals <- heart_data$AHD_numeric - pred_probs
+
+# Remove any NA or Inf values from residuals and predicted probabilities
+valid_indices <- !is.na(residuals) & !is.infinite(residuals) & !is.na(pred_probs) & !is.infinite(pred_probs)
+
+# Subset the data to remove invalid values
+pred_probs_valid <- pred_probs[valid_indices]
+residuals_valid <- residuals[valid_indices]
+
+# Check if there are any valid data points left
+if (length(pred_probs_valid) > 0 && length(residuals_valid) > 0) {
+    # Plot Residuals vs Predicted Probability for Initial Model
+    plot(pred_probs_valid, residuals_valid, 
+         xlab = "Predicted Probability", ylab = "Residuals", 
+         main = "Residuals vs Predicted Probability (Initial Model)")
+    abline(h = 0, col = "red", lty = 2)  # Reference line at 0
+} else {
+    cat("No valid data points to plot for initial model.\n")
+}
+```
+
+# The model exhibits heteroscedasticity, means the variability of the residuals is not constant across different levels of the fitted values.
+
+
+```{r}
+# Generate predicted probabilities for the refitted model
+pred_probs_refit <- predict(model_no_influential, type = "response")
+residuals_refit <- heart_data_no_influential$AHD_numeric - pred_probs_refit
+
+# Remove any NA or Inf values from residuals and predicted probabilities
+valid_indices_refit <- !is.na(residuals_refit) & !is.infinite(residuals_refit) & 
+                        !is.na(pred_probs_refit) & !is.infinite(pred_probs_refit)
+
+# Subset the data to remove invalid values
+pred_probs_refit_valid <- pred_probs_refit[valid_indices_refit]
+residuals_refit_valid <- residuals_refit[valid_indices_refit]
+
+# Check if there are any valid data points left
+if (length(pred_probs_refit_valid) > 0 && length(residuals_refit_valid) > 0) {
+    # Plot Residuals vs Predicted Probability for Refitted Model
+    plot(pred_probs_refit_valid, residuals_refit_valid, 
+         xlab = "Predicted Probability", ylab = "Residuals", 
+         main = "Residuals vs Predicted Probability (Refitted Model)")
+    abline(h = 0, col = "red", lty = 2)  # Reference line at 0
+} else {
+    cat("No valid data points to plot for refitted model.\n")
+}
+```
+
+# The refitted model appears to be an improvement over the initial model, especially in terms of addressing heteroscedasticity.
+
+
+```{r}
+# Plot 3: **ROC Curve (Receiver Operating Characteristic)**
+library(pROC)
+roc_curve <- roc(heart_data_no_influential$AHD, pred_probs_refit)
+plot(roc_curve, main = "ROC Curve for Refitted Logistic Regression Model")
+```
+
+# The ROC curve suggests that the refitted logistic regression model has a reasonably good ability to discriminate between positive and negative cases.
+
+```{r}
+# Plot 4: **Odds Ratios Bar Plot**
+odds_ratios <- exp(coef(model_no_influential))
+barplot(odds_ratios[-1], names.arg = names(coef(model_no_influential))[-1], 
+        col = "lightblue", main = "Odds Ratios for Predictors")
+```
+
+# The odds ratio bar plot visually represents the strength and direction of the association between each predictor variable and the outcome (heart disease) in the logistic regression model. The height of each bar corresponds to the odds ratio for that predictor. A bar taller than 1 indicates that an increase in the predictor variable is associated with an increased odds of heart disease. Conversely, a bar shorter than 1 indicates a decreased odds. In this plot, "Sex" appears to be the most significant predictor, with a substantially larger odds ratio compared to other variables. This suggests that being male is strongly associated with an increased risk of heart disease.
+
+```{r}
+# Plot 5: **Confusion Matrix (for Model Evaluation)**
+pred_class <- ifelse(pred_probs_refit > 0.5, 1, 0)
+table(pred_class, heart_data_no_influential$AHD)
+```
+
+# From this confusion matrix we can interpret the following,
+# True Negative (TN): 138 instances were correctly predicted as negative (no heart disease).
+# False Positive (FP): 18 instances were incorrectly predicted as positive (heart disease).
+# False Negative (FN): 19 instances were incorrectly predicted as negative.
+# True Positive (TP): 108 instances were correctly predicted as positive.
+
+```{r}
+# Plot 6: **Predicted vs Actual Plot**
+plot(pred_probs_refit, heart_data_no_influential$AHD, 
+     xlab = "Predicted Probability", ylab = "Actual Outcome", 
+     main = "Actual vs Predicted Values")
+abline(h = 1.5, col = "red", lty = 2)  # Threshold line for classification
+
+# ------------------------------- End of Plotting -------------------------------
+
+
+```
+# .In the given plot, we see two distinct clusters of points: one near y=1 and another near y=2. This suggests that the model is generally making correct predictions for most observations.
+
+
+
+# Selecting the predictors:
+# When selecting predictors for a logistic regression model, especially for predicting heart disease (AHD ~ Age + Sex + ChestPain + RestBP + Chol + MaxHR), it is important to base choices on statistical significance, domain knowledge, and correlation with the target variable (AHD). Let’s break down the reasoning behind choosing Age, Sex, ChestPain, RestBP, Chol, and MaxHR, and not including variables like Fbs, RestECG, xAng, Oldpeak, Slope, and Thal:
+
+# 1. Domain Knowledge and Known Risk Factors:
+# Some of the chosen variables are well-established risk factors for heart disease based on medical research and clinical guidelines. These include:
+
+# Age: Age is a strong risk factor for heart disease. Older individuals are at a higher risk, and this variable is commonly included in predictive models for heart disease.
+# Sex: Gender has a well-documented impact on heart disease risk, with men generally being at higher risk at younger ages, although this changes in post-menopausal women.
+# ChestPain: Different types of chest pain (e.g., typical, atypical, or non-anginal) are directly linked to heart disease risk. Individuals experiencing chest pain are often screened for heart disease.
+# RestBP (Resting Blood Pressure): High blood pressure is a key risk factor for heart disease. Elevated resting blood pressure can indicate increased cardiovascular risk and is an important predictor in heart disease models.
+# Chol (Serum Cholesterol): High cholesterol is another key risk factor for heart disease, particularly elevated levels of low-density lipoprotein (LDL) cholesterol.
+# MaxHR (Maximum Heart Rate): MaxHR, often linked to the fitness level of an individual, can provide insight into cardiovascular health. A lower MaxHR during stress testing or exercise could indicate an issue with heart function.
+# These variables were chosen because they are clinically relevant and are well-documented predictors of heart disease risk.
+
+# 2. Statistical Considerations:
+# When selecting variables for a regression model, we generally aim to include those that have a significant relationship with the target variable (i.e., the presence of heart disease, AHD). Some variables, however, may be less relevant or have weaker correlations with the target. Let’s examine the other variables briefly:
+
+# Fbs (Fasting Blood Sugar > 120 mg/dl): While fasting blood sugar is a risk factor for heart disease, it does not have a strong independent effect once other variables, such as cholesterol or blood pressure, are accounted for. Additionally, it is less predictive compared to other direct indicators like Chol or RestBP, which are more strongly correlated with heart disease.
+
+# RestECG (Resting Electrocardiographic Results): This variable indicates the type of abnormality in the ECG during rest. While it can be important in clinical settings, it is not as strong a predictive value when the model already includes RestBP and other variables like ChestPain that indicate potential heart issues. This variable might be more useful in a clinical decision support system alongside other diagnostic tools rather than as a sole predictor in a logistic regression model.
+
+# xAng (Exercise Induced Angina): This is a very specific variable, representing whether the patient experiences angina during exercise. While it is a key clinical indicator, ChestPain can often capture this effect. Including both variables might cause multicollinearity, which could weaken the model’s performance.
+
+# Oldpeak (Depression of the ST segment): This is an indicator of ischemia (reduced blood flow to the heart), which can be important for diagnosis. However, ChestPain and RestBP might already capture the effects of ischemia to some extent, and adding Oldpeak might not improve the model significantly.
+
+# Slope (Slope of the peak exercise ST segment): Similar to Oldpeak, this variable measures exercise-induced changes in the ST segment of the ECG, indicating ischemia. It is a more technical clinical measure and might not offer significant new information once variables like ChestPain and MaxHR are included.
+
+# Thal (Thalassemia): This is a categorical variable representing a type of blood disorder. While it can be associated with cardiovascular risk in certain populations, it is less directly related to heart disease risk compared to more widely applicable variables like Chol or RestBP.
+
+# 3. Collinearity and Model Simplicity:
+# Including too many variables that are highly correlated with each other can lead to multicollinearity, which can cause instability in the regression coefficients and make the model less interpretable. Some of the variables which are excluded (e.g., xAng, Oldpeak, Slope, RestECG) are related to each other and might overlap in the information they provide. 
+# For example:
+# ChestPain and xAng are both closely related to symptoms of heart disease.
+# Oldpeak and Slope provide similar information related to ischemia.
+# RestBP and Chol are both related to cardiovascular risk but are not needed to be combined with other variables such as RestECG or Thal.
+# Thus, selecting a smaller subset of predictors to avoid redundancy and ensures a simpler, more interpretable model.
+
+# 4. Data Availability and Missing Data:
+# In some cases, variables with more missing data (e.g., Thal, Fbs) may have been excluded to prevent bias or loss of data. If a significant portion of the data for certain variables is missing or imputed with low confidence, these variables might not be the best candidates for inclusion.
+
+# 5. Predictive Power:
+# Some variables were excluded because they did not improve the model’s ability to predict heart disease. For example:
+# Thal does not significantly improve predictive power over variables like Chol or RestBP.
+# Fbs has limited predictive power in this context, especially once Chol and RestBP are included, which are better proxies for overall cardiovascular health.
+# Conclusion:
+# The variables Age, Sex, ChestPain, RestBP, Chol, and MaxHR were chosen because they are well-established predictors of heart disease based on both domain knowledge and statistical considerations. These variables also provide distinct, non-redundant information that helps the model identify the presence of heart disease without overfitting or introducing multicollinearity. The excluded variables, while potentially useful in clinical settings, either introduce redundancy, have weaker predictive power, or may not add significant value in the context of this specific logistic regression model.
+
+
+
+# I have chosen LOGISTIC REGRESSION for the heart disease prediction dataset (where the target variable AHD is binary, indicating the presence or absence of heart disease) for several important reasons. Logistic regression is particularly suited for situations where the outcome variable is binary or categorical, and here's why it is a good choice for the analysis:
+
+# 1. Binary Outcome Variable (AHD: Yes/No)
+# Nature of the Target Variable: The target variable in the dataset, AHD (which stands for "presence of heart disease"), is a binary categorical variable, with only two possible outcomes: "Yes" (the person has heart disease) or "No" (the person does not have heart disease). Logistic regression is specifically designed for modeling binary outcomes, where the response variable is typically coded as 0 (No) or 1 (Yes).
+
+# Logistic regression models the probability that an observation falls into one of the two categories (heart disease vs. no heart disease) based on a set of predictor variables.
+
+# 2. Probability Interpretation
+# Interpretation of Results: Logistic regression estimates the probability of an event occurring (in this case, having heart disease). The logistic function produces values between 0 and 1, making it ideal for problems where the output needs to represent probabilities. For instance, the model can predict the probability that a patient has heart disease based on their characteristics (age, sex, cholesterol levels, etc.).
+# The coefficients in logistic regression are interpreted in terms of odds ratios, which can help you understand the effect of each predictor on the likelihood of the event (heart disease). For example, for a given increase in a predictor variable, logistic regression provides the change in the odds of the outcome occurring.
+
+# 3. Linear Relationship with Log-Odds
+# Log-Odds Link: Logistic regression does not require a linear relationship between the predictors and the target variable itself but instead models the log-odds (logarithm of the odds of having heart disease). This transformation makes it flexible to handle non-linear relationships between the predictors and the outcome.
+
+# 4. Ease of Interpretation
+# Interpretability: Logistic regression iS chosen for its simplicity and interpretability. The model provides coefficients that can be interpreted directly in terms of odds ratios, which allows for clear communication of results. For example, if the coefficient for Age is positive, it indicates that as age increases, the odds of having heart disease also increase. Additionally, because logistic regression provides probabilities, it allows for thresholding, where a decision can be made (e.g., "if probability > 0.5, predict heart disease").
+
+# 5. Model Performance and Validation
+# Robustness to Outliers: Logistic regression is relatively robust to outliers in comparison to other techniques such as linear regression. Since i have worked with a medical dataset where some outliers may exist (e.g., unusually high cholesterol levels, abnormal heart rates), logistic regression can handle this type of data well.
+
+# No Assumption of Normality: Logistic regression does not require the predictor variables to be normally distributed, unlike linear regression, which assumes that the residuals are normally distributed. This is useful since many of the predictors in the dataset (e.g., age, blood pressure, cholesterol) may not follow a normal distribution.
+
+# Model Evaluation: Logistic regression provides several tools for model evaluation, including the AIC (Akaike Information Criterion), pseudo-R² values, and ROC (Receiver Operating Characteristic) curves, which are useful for assessing model fit and predictive performance. For a binary outcome like AHD, these evaluation metrics are more appropriate than those used in linear regression.
+
+# 6. Multivariable Context
+#  Multiple Predictors: Logistic regression can easily handle multiple predictor variables. I have chosen several predictors such as Age, Sex, ChestPain, RestBP, Chol, and MaxHR to predict the presence of heart disease. Logistic regression handles multivariable relationships well, where it can assess the effect of multiple variables simultaneously while controlling for potential confounders.
+
+# 7. Linear Decision Boundaries
+# Decision Boundaries: Logistic regression is well-suited when there is need for linear decision boundary between the two classes (e.g., heart disease vs. no heart disease). Although the relationship between predictors and the outcome may not be strictly linear, logistic regression provides a linear decision surface in the transformed feature space (log-odds). This simplicity can still be very effective, especially when the decision boundary between the classes isn't overly complex.
+
+# 8. Flexibility and Extensions
+# Extensions to More Complex Models: While logistic regression itself is a relatively simple model, it also forms the basis for more complex models. For example, multinomial logistic regression can be used if there are more than two outcome categories, and regularization techniques like Lasso and Ridge regression can be applied to handle large sets of predictors.
+
+# 9. Interpretation for Non-Experts
+# Simplicity for Communication: Logistic regression is widely understood and easy to explain to non-technical stakeholders. For example, you can tell a decision-maker that "for each 1-year increase in age, the odds of having heart disease increase by X%," or "men are X times more likely to have heart disease than women." This makes it a good choice when presenting findings to medical professionals, healthcare policymakers, or other stakeholders without deep statistical expertise.
+
+# Conclusion:
+# In summary, you I have chosen logistic regression for this dataset because:
+
+# The target variable is binary (AHD: Yes/No).
+# Logistic regression models the probability of an event and provides easy-to-interpret coefficients in terms of odds ratios.
+# The model is robust, flexible, and easy to implement and interpret.
+# It is particularly well-suited for binary outcomes and works well with multiple predictor variables.
+# Logistic regression also provides useful evaluation metrics for assessing model performance, which are appropriate for binary classification tasks like this one.
+# Overall, logistic regression is a natural choice for this problem because of its simplicity, effectiveness, and interpretability in predicting the likelihood of heart disease from the available clinical and demographic variables.
+
+
+
+# Comparison of Initial and Refit Logistic Regression Models
+# The comparison between the initial model and the refit model provides insight into the changes in model performance and the significance of predictors after addressing influential data points. Below is a detailed analysis of the differences in both models based on key statistical outputs.
+
+# 1. Model Fit (Pseudo-R²)
+# Initial Model:
+# McFadden's R²: 0.363
+# r2ML: 0.394
+# r2CU: 0.527
+
+# Refit Model:
+# McFadden's R²: 0.565
+# r2ML: 0.540
+# r2CU: 0.723
+
+# Comparison:
+# There is a clear improvement in all Pseudo-R² metrics after refitting the model. McFadden's R² increased from 0.363 to 0.565, indicating a stronger fit of the model to the data.
+# The r2ML and r2CU values also increased, suggesting that the refit model explains more variance in the outcome variable. This is likely due to the removal of influential observations which may have been distorting the results in the initial model.
+
+# 2. Deviance
+# Initial Model:
+# Null deviance: 417.98
+# Residual deviance: 266.18
+# AIC: 284.18
+
+# Refit Model:
+# Null deviance: 389.34
+# Residual deviance: 169.32
+# AIC: 187.32
+
+# Comparison:
+# The residual deviance decreased substantially from 266.18 in the initial model to 169.32 in the refitted model, reflecting a better fit of the refit model to the data.
+# The AIC decreased from 284.18 to 187.32, which confirms that the refitted model is more grasping, meaning it balances goodness of fit with model complexity better than the initial model.
+
+# 3. Coefficients and Statistical Significance
+# The refitted model shows more robust coefficients, and the p-values are generally smaller, indicating stronger statistical significance after removing influential data points.
+# The coefficient estimates for some predictors, such as MaxHR and RestBP, have become more pronounced in the refit model, indicating a stronger effect in predicting heart disease.
+
+# 4. Variance Inflation Factor (VIF)
+# Initial Model:
+# Age: 1.14
+# Sex: 1.14
+# ChestPain: 1.02
+# RestBP: 1.09
+# Chol: 1.08
+# MaxHR: 1.12
+
+# Refit Model:
+# Age: 1.13
+# Sex: 1.35
+# ChestPain: 1.07
+# RestBP: 1.22
+# Chol: 1.12
+# MaxHR: 1.26
+
+# Comparison:
+# The VIFs for most variables increased slightly after the refit, particularly for Sex, RestBP, and MaxHR, which may indicate that these predictors are more inter-correlated with other variables after the influential data points were removed.
+# Despite these increases, the VIF values are still below 2, indicating no severe multicollinearity problems. However, the refit model may show slightly more correlation among some predictors, especially for Sex, which has the highest VIF at 1.35.
+
+# 5. Durbin-Watson Test (Autocorrelation)
+# Initial Model:
+# Durbin-Watson: 2.0145 (p-value = 0.5451)
+
+# Refit Model:
+# Durbin-Watson: 2.0006 (p-value = 0.5009)
+
+# Comparison:
+# The Durbin-Watson statistic is very similar in both models, indicating that there is no significant autocorrelation in the residuals in either model. The p-values (both greater than 0.05) confirm that autocorrelation is not present in either model.
+
+# 6. Conclusion
+# Initial Model:
+# The initial model had significant predictors such as Sex, ChestPain, RestBP, Chol, and MaxHR. The overall model fit (based on Pseudo-R²) was moderately good, but it could potentially be improved by removing influential observations.
+
+# Refit Model:
+# After refitting the model by removing influential data points, the model fit improved significantly, as reflected in higher McFadden's R², lower AIC, and reduced deviance.
+# The statistical significance of most predictors improved, and their coefficients became more pronounced, particularly for Sex, ChestPain, RestBP, and MaxHR.
+# The VIFs increased slightly but still indicated no severe multicollinearity issues.
+# The Durbin-Watson test confirmed that autocorrelation was not a problem in either model.
+
+# Overall Conclusion:
+# The refit model provides a better fit to the data, with stronger predictor significance, a lower AIC, and improved Pseudo-R² values. By removing influential data points, the model appears to be more robust and reliable for predicting the presence of heart disease, making it the preferred model for final analysis.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
